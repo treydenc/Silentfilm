@@ -64,11 +64,40 @@ class StoryState:
         self.current_images = []
         self.current_stories = []
         self.counter = 0
+        
+    def reset(self):
+        self.__init__()
 
+# Initialize global variables
 story_state = StoryState()
+net = None
+
+def initialize_model():
+    """Initialize the HED model once at startup"""
+    global net
+    
+    # Check if model files exist
+    prototxt_path = "deploy.prototxt"
+    model_path = "hed_pretrained_bsds.caffemodel"
+    
+    if not os.path.exists(prototxt_path) or not os.path.exists(model_path):
+        logger.error("Model files not found")
+        raise FileNotFoundError(f"Required model files not found. Please ensure {prototxt_path} and {model_path} exist in the current directory.")
+
+    # Register the custom crop layer only once
+    cv.dnn_registerLayer('Crop', CropLayer)
+    logger.debug("Registered CropLayer")
+    
+    # Load the model
+    net = cv.dnn.readNetFromCaffe(prototxt_path, model_path)
+    logger.debug("Loaded HED model")
+    
+    return net
 
 def process_line_drawing(image_data, detail_level='medium'):
     """Convert captured image to line drawing using HED"""
+    global net
+    
     try:
         logger.debug("Starting process_line_drawing")
         
@@ -93,18 +122,6 @@ def process_line_drawing(image_data, detail_level='medium'):
         except Exception as e:
             logger.error(f"Image decode error: {str(e)}")
             raise
-
-        # Check if model files exist
-        prototxt_path = "deploy.prototxt"
-        model_path = "hed_pretrained_bsds.caffemodel"
-        
-        if not os.path.exists(prototxt_path) or not os.path.exists(model_path):
-            logger.error("Model files not found")
-            raise FileNotFoundError(f"Required model files not found. Please ensure {prototxt_path} and {model_path} exist in the current directory.")
-
-        # Register the custom crop layer
-        cv.dnn_registerLayer('Crop', CropLayer)
-        logger.debug("Registered CropLayer")
 
         # Calculate new dimensions maintaining aspect ratio
         max_dim = 256
@@ -132,9 +149,8 @@ def process_line_drawing(image_data, detail_level='medium'):
         )
         logger.debug("Created blob")
 
-        # Load and process with HED model
+        # Process with HED model
         try:
-            net = cv.dnn.readNetFromCaffe(prototxt_path, model_path)
             net.setInput(inp)
             out = net.forward()
             logger.debug("Model inference completed")
@@ -249,7 +265,6 @@ def generate_dialogue():
         logger.error(f"Server Error: {str(e)}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# Have only one main block at the end
 if __name__ == '__main__':
     # Configure logging to write to a file
     logging.basicConfig(
@@ -261,14 +276,13 @@ if __name__ == '__main__':
         ]
     )
     
-    # Check for model files before starting server
-    required_files = ["deploy.prototxt", "hed_pretrained_bsds.caffemodel"]
-    missing_files = [f for f in required_files if not os.path.exists(f)]
-    
-    if missing_files:
-        logger.error(f"Missing required model files: {missing_files}")
-        print(f"ERROR: Missing required model files: {missing_files}")
-        print("Please ensure these files are present in the current directory")
+    # Check for model files and initialize the model before starting server
+    try:
+        net = initialize_model()
+        logger.info("Successfully initialized HED model")
+    except Exception as e:
+        logger.error(f"Failed to initialize model: {str(e)}")
+        print(f"ERROR: Failed to initialize model: {str(e)}")
         sys.exit(1)
     
     logger.info("Starting Flask server")

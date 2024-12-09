@@ -1,4 +1,6 @@
-import { useRef, useState, useEffect } from 'react';
+'use client';
+
+import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import dynamic from 'next/dynamic';
 
 const Sketch = dynamic(
@@ -6,7 +8,7 @@ const Sketch = dynamic(
   { ssr: false }
 );
 
-const P5Canvas = ({ 
+const P5Canvas = forwardRef(({ 
     imageData, 
     processedImageData,
     parentDimensions, 
@@ -15,53 +17,52 @@ const P5Canvas = ({
     timePoints: externalTimePoints = [],
     startTime: externalStartTime,
     onDrawingUpdate,
-    playbackSpeed = 1
-  }) => {
+    playbackSpeed = 1,
+    fontSize = 24,
+    fontThickness = 2,
+    drawingText = ''
+  }, ref) => {
   
+  // Core refs
+  const p5InstanceRef = useRef(null);
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+  const timePoints = useRef(externalTimePoints);
+  const startTimeRef = useRef(externalStartTime);
+  
+  // Image refs
   const backgroundImage = useRef(null);
   const processedImage = useRef(null);
-  const containerRef = useRef(null);
-  const canvasRef = useRef(null);
+  
+  // State
   const [mounted, setMounted] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [showBackground, setShowBackground] = useState(true);
   const [debug, setDebug] = useState('');
   const [useProcessedImage, setUseProcessedImage] = useState(false);
-  
-  const timePoints = useRef(externalTimePoints);
-  const startTimeRef = useRef(externalStartTime);
+  const [isRecording, setIsRecording] = useState(false);
+
+  // Drawing state refs
+  const spacingFactor = 2;
+  const letterSpacing = useRef(fontSize * spacingFactor);
+  const lastDrawnPoint = useRef({ x: 0, y: 0 });
+  const accumulatedDistance = useRef(0);
+  const currentLetterIndex = useRef(0);
+  const letterData = useRef([]);
   const lastTimeRef = useRef(0);
   const activeDrawingTime = useRef(0);
   const currentSegmentRef = useRef([]);
-  const playSpeed = 1.0;
 
-  useEffect(() => {
-    if (!canDraw) {
-      setIsDrawing(false);
-      currentSegmentRef.current = [];
-    }
-  }, [canDraw]);
+  // Recording state
+  const recordingRef = useRef({
+    chunks: [],
+    mediaRecorder: null,
+    stream: null,
+    isRecording: false,
+    animationFrame: null
+  });
 
-  useEffect(() => {
-    if (canvasRef.current && processedImageData) {
-      const p5Instance = canvasRef.current.p5;
-      p5Instance.loadImage(processedImageData, img => {
-        console.log('Loaded processed image:', img.width, img.height);
-        processedImage.current = img;
-      });
-    }
-  }, [processedImageData]);
-  
-  useEffect(() => {
-    if (canvasRef.current && imageData) {
-      const p5Instance = canvasRef.current.p5;
-      p5Instance.loadImage(imageData, img => {
-        console.log('Loaded original image:', img.width, img.height);
-        backgroundImage.current = img;
-      });
-    }
-  }, [imageData]);
-
+  // Setup effects
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -76,201 +77,237 @@ const P5Canvas = ({
     startTimeRef.current = externalStartTime;
   }, [externalStartTime]);
 
-  const setup = (p5, canvasParentRef) => {
-    const canvas = p5.createCanvas(
-      parentDimensions.width || window.innerWidth,
-      parentDimensions.height || window.innerHeight
-    );
-    canvas.parent(canvasParentRef);
-    canvasRef.current = canvas.elt;
-    
-    canvasRef.current.style.position = 'absolute';
-    canvasRef.current.style.top = '0';
-    canvasRef.current.style.left = '0';
-    canvasRef.current.style.zIndex = '1';
-  
-    // Load both images
+  useEffect(() => {
+    if (!canDraw) {
+      setIsDrawing(false);
+      currentSegmentRef.current = [];
+    }
+  }, [canDraw]);
+
+  useEffect(() => {
+    if (p5InstanceRef.current) {
+      loadImages(p5InstanceRef.current);
+    }
+  }, [imageData, processedImageData]);
+
+  // Image loading
+  const loadImages = (p5) => {
+    if (!p5) return;
+
     if (imageData) {
       p5.loadImage(imageData, img => {
         backgroundImage.current = img;
-      });
+      }, error => console.error('Error loading original image:', error));
     }
     
     if (processedImageData) {
       p5.loadImage(processedImageData, img => {
         processedImage.current = img;
-      });
+      }, error => console.error('Error loading processed image:', error));
     }
+  };
+
+  // Export functionality
+  useImperativeHandle(ref, () => ({
+    exportAnimation: async () => {
+      if (!canvasRef.current || recordingRef.current.isRecording) return;
+      
+      try {
+        // Get the actual canvas element
+        const canvas = canvasRef.current.elt;
+        
+        // Set up recording
+        const stream = canvas.captureStream(60);
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'video/webm',
+          videoBitsPerSecond: 8000000 // 8Mbps for high quality
+        });
+        
+        recordingRef.current = {
+          chunks: [],
+          mediaRecorder,
+          stream,
+          isRecording: true,
+          animationFrame: null
+        };
+        
+        return new Promise((resolve) => {
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              recordingRef.current.chunks.push(e.data);
+            }
+          };
+
+          mediaRecorder.onstop = () => {
+            const blob = new Blob(recordingRef.current.chunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'animation.webm';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            // Clean up
+            recordingRef.current.isRecording = false;
+            if (recordingRef.current.animationFrame) {
+              cancelAnimationFrame(recordingRef.current.animationFrame);
+            }
+            setIsRecording(false);
+            resolve();
+          };
+
+          setIsRecording(true);
+          mediaRecorder.start();
+
+          // Reset animation state
+          const duration = activeDrawingTime.current;
+          const totalCycleDuration = duration * 2;
+          const startTime = Date.now();
+          
+          // Custom animation loop for recording
+          function animate() {
+            const currentTime = (Date.now() - startTime) / 1000;
+            const cycleTime = (currentTime * playbackSpeed) % totalCycleDuration;
+            
+            // Draw frame with black background
+            const p5 = p5InstanceRef.current;
+            p5.clear();
+            p5.background(0);
+            
+            // Calculate playback time for forward/reverse animation
+            const playbackTime = cycleTime <= duration 
+              ? cycleTime 
+              : totalCycleDuration - cycleTime;
+            
+            drawLetters(p5, playbackTime);
+
+            // Stop after one complete cycle
+            if (currentTime * playbackSpeed >= totalCycleDuration) {
+              mediaRecorder.stop();
+              return;
+            }
+
+            recordingRef.current.animationFrame = requestAnimationFrame(animate);
+          }
+
+          // Start animation
+          animate();
+        });
+      } catch (error) {
+        console.error('Export failed:', error);
+        setIsRecording(false);
+      }
+    }
+  }));
+
+  // P5 setup
+  const setup = (p5, canvasParentRef) => {
+    p5InstanceRef.current = p5;
     
+    const canvas = p5.createCanvas(parentDimensions.width, parentDimensions.height);
+    canvas.parent(canvasParentRef);
+    canvasRef.current = canvas;
+    
+    canvas.elt.style.position = 'absolute';
+    canvas.elt.style.top = '0';
+    canvas.elt.style.left = '0';
+    canvas.elt.style.zIndex = '1';
+    
+    loadImages(p5);
     p5.clear();
+    p5.textFont('Arial');
+    p5.textAlign(p5.CENTER, p5.CENTER);
   };
 
-  // Helper function to draw a smooth curve through points with enhanced styling
-  const drawSmoothLine = (p5, points) => {
-    if (points.length < 2) return;
+  // Letter management
+  const addLetter = (point, angle) => {
+    if (!drawingText || drawingText.length === 0) return;
 
-    // Set up enhanced drawing style
-    p5.strokeCap(p5.ROUND);
-    p5.strokeJoin(p5.ROUND);
-    p5.noFill();
-    p5.stroke(255);
-    p5.strokeWeight(3); // Slightly thicker line
-
-    // Draw the main smooth curve
-    p5.beginShape();
+    const letter = drawingText[currentLetterIndex.current % drawingText.length];
     
-    // Calculate control points for bezier curve
-    const controlPoints = [];
-    for (let i = 0; i < points.length - 1; i++) {
-      const curr = points[i];
-      const next = points[i + 1];
-      
-      // Calculate control points
-      const dx = next.x - curr.x;
-      const dy = next.y - curr.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      const tension = 0.5; // Adjust this value to control curve smoothness
-      
-      controlPoints.push({
-        x1: curr.x + dx * tension,
-        y1: curr.y + dy * tension,
-        x2: next.x - dx * tension,
-        y2: next.y - dy * tension
-      });
-    }
+    letterData.current.push({
+      letter,
+      x: point.x,
+      y: point.y,
+      angle,
+      fontSize: fontSize,
+      thickness: fontThickness,
+      time: point.t
+    });
 
-    // Draw enhanced smooth curve
-    p5.vertex(points[0].x, points[0].y);
-    for (let i = 0; i < points.length - 1; i++) {
-      const cp = controlPoints[i];
-      p5.bezierVertex(
-        cp.x1, cp.y1,
-        cp.x2, cp.y2,
-        points[i + 1].x, points[i + 1].y
-      );
-    }
-    p5.endShape();
-
-    // Add subtle glow effect
-    p5.drawingContext.shadowBlur = 2;
-    p5.drawingContext.shadowColor = 'rgba(255, 255, 255, 0.3)';
+    currentLetterIndex.current = (currentLetterIndex.current + 1) % drawingText.length;
   };
 
+  const drawLetters = (p5, upToTime = null) => {
+    letterData.current.forEach(data => {
+      if (upToTime !== null && data.time > upToTime) return;
+
+      p5.push();
+      p5.translate(data.x, data.y);
+      p5.rotate(data.angle);
+      p5.textSize(data.fontSize);
+      p5.strokeWeight(data.thickness);
+      p5.stroke(0);
+      p5.fill(255);
+      p5.text(data.letter, 0, 0);
+      p5.pop();
+    });
+  };
+
+  // Main draw loop
   const draw = (p5) => {
+    if (isRecording) return;
+    
     p5.clear();
     
     if (showBackground) {
       const currentImage = useProcessedImage && processedImage.current ? 
         processedImage.current : backgroundImage.current;
-      
       if (currentImage) {
-        // Calculate proper scaling
-        const scaleX = p5.width / currentImage.width;
-        const scaleY = p5.height / currentImage.height;
-        const scale = Math.min(scaleX, scaleY);
-        
-        const newWidth = currentImage.width * scale;
-        const newHeight = currentImage.height * scale;
-        
-        // Center the image
-        const x = (p5.width - newWidth) / 2;
-        const y = (p5.height - newHeight) / 2;
-        
-        p5.image(currentImage, x, y, newWidth, newHeight);
+        p5.image(currentImage, 0, 0, parentDimensions.width, parentDimensions.height);
       }
     } else {
       p5.background(0);
     }
-    
+
     const duration = activeDrawingTime.current;
+    const totalCycleDuration = duration * 2;
 
-    // Drawing mode - show all segments
-    if (!isPlaying) {
-      if (timePoints.current && timePoints.current.length > 0) {
-        p5.noFill();
-        p5.stroke(255);
-        p5.strokeWeight(2);
-
-        // Draw completed segments with smooth curves
-        let currentSegment = [];
-        timePoints.current.forEach((point) => {
-          if (point.isNewSegment) {
-            if (currentSegment.length > 0) {
-              drawSmoothLine(p5, currentSegment);
-              currentSegment = [];
-            }
-          }
-          currentSegment.push(point);
-        });
-
-        // Draw last segment
-        if (currentSegment.length > 0) {
-          drawSmoothLine(p5, currentSegment);
-        }
-      }
-    }
-    // Playback mode with smooth curves
-    else if (isPlaying && timePoints.current && timePoints.current.length > 1) {
-      const currentPlaybackTime = ((p5.millis() / 1000 * playbackSpeed) % Math.max(duration, 0.001));
-      
-      p5.noFill();
-      p5.stroke(255);
-      p5.strokeWeight(2);
-      
-      let currentSegment = [];
-      let lastDrawnPoint = null;
-      
-      // Collect points up to current time
-      for (let i = 0; i < timePoints.current.length; i++) {
-        const point = timePoints.current[i];
-        
-        if (point.t > currentPlaybackTime) {
-          break;
-        }
-
-        if (point.isNewSegment && currentSegment.length > 0) {
-          drawSmoothLine(p5, currentSegment);
-          currentSegment = [];
-        }
-        
-        currentSegment.push(point);
-        lastDrawnPoint = point;
-      }
-
-      // Draw current segment
-      if (currentSegment.length > 0) {
-        drawSmoothLine(p5, currentSegment);
-      }
-
-      // Draw the position indicator
-      if (lastDrawnPoint) {
-        p5.fill(255, 0, 0);
-        p5.noStroke();
-        p5.circle(lastDrawnPoint.x, lastDrawnPoint.y, 10);
-      }
+    if (isPlaying && timePoints.current?.length > 1) {
+      const cycleTime = (p5.millis() / 1000 * playbackSpeed) % totalCycleDuration;
+      const currentPlaybackTime = cycleTime <= duration ? cycleTime : totalCycleDuration - cycleTime;
+      drawLetters(p5, currentPlaybackTime);
+    } else {
+      drawLetters(p5);
     }
 
+    // Debug info
+    const cycleTime = (p5.millis() / 1000 * playbackSpeed) % totalCycleDuration;
+    const direction = cycleTime <= duration ? "Forward" : "Reverse";
+    
     let debugInfo = `Canvas Size: ${p5.width}x${p5.height}\n`;
     debugInfo += `Points: ${timePoints.current ? timePoints.current.length : 0}\n`;
+    debugInfo += `Letters: ${letterData.current.length}\n`;
     debugInfo += `Drawing: ${isDrawing}\n`;
     debugInfo += `Playing: ${isPlaying}\n`;
-    debugInfo += `Can Draw: ${canDraw}\n`;
+    debugInfo += `Recording: ${isRecording}\n`;
     debugInfo += `Speed: ${playbackSpeed}x\n`;
-    debugInfo += `Active Drawing Time: ${duration.toFixed(2)}\n`;
+    debugInfo += `Duration: ${duration.toFixed(2)}s\n`;
     
     if (isPlaying) {
-      const currentPlaybackTime = ((p5.millis() / 1000 * playbackSpeed) % Math.max(duration, 0.001));
-      debugInfo += `Playback Time: ${currentPlaybackTime.toFixed(2)}/${duration.toFixed(2)}\n`;
+      debugInfo += `Time: ${(cycleTime <= duration ? cycleTime : totalCycleDuration - cycleTime).toFixed(2)}/${duration.toFixed(2)}s (${direction})\n`;
     }
     
     setDebug(debugInfo);
   };
 
+  // Mouse event handlers
   const mousePressed = (p5) => {
     if (!canDraw) return;
 
     setIsDrawing(true);
     const currentTime = p5.millis() / 1000;
+    letterSpacing.current = fontSize * spacingFactor;
     
     const newPoint = {
       x: p5.mouseX,
@@ -280,12 +317,16 @@ const P5Canvas = ({
     };
 
     currentSegmentRef.current = [newPoint];
+    accumulatedDistance.current = 0;
+    lastDrawnPoint.current = newPoint;
     
-    if (!timePoints.current || timePoints.current.length === 0) {
+    if (!timePoints.current?.length) {
       startTimeRef.current = currentTime;
       lastTimeRef.current = currentTime;
       activeDrawingTime.current = 0;
       timePoints.current = [newPoint];
+      letterData.current = [];
+      currentLetterIndex.current = 0;
     } else {
       lastTimeRef.current = currentTime;
       timePoints.current = [...timePoints.current, newPoint];
@@ -308,6 +349,16 @@ const P5Canvas = ({
       isNewSegment: false
     };
 
+    const dist = p5.dist(lastDrawnPoint.current.x, lastDrawnPoint.current.y, newPoint.x, newPoint.y);
+    accumulatedDistance.current += dist;
+
+    if (accumulatedDistance.current >= letterSpacing.current) {
+      const angle = p5.atan2(newPoint.y - lastDrawnPoint.current.y, newPoint.x - lastDrawnPoint.current.x);
+      addLetter(newPoint, angle);
+      accumulatedDistance.current = 0;
+      lastDrawnPoint.current = newPoint;
+    }
+
     currentSegmentRef.current = [...currentSegmentRef.current, newPoint];
     timePoints.current = [...timePoints.current, newPoint];
     onDrawingUpdate(timePoints.current, startTimeRef.current);
@@ -328,8 +379,8 @@ const P5Canvas = ({
       ref={containerRef} 
       className="absolute inset-0"
       style={{ 
-        width: parentDimensions.width || '100vw',
-        height: parentDimensions.height || '100vh',
+        width: parentDimensions.width,
+        height: parentDimensions.height,
         position: 'relative',
         overflow: 'hidden'
       }}
@@ -348,27 +399,24 @@ const P5Canvas = ({
       
       <div className="absolute top-4 right-4 flex gap-2 z-10">
         <button
-          onClick={() => {
-            setShowBackground(prev => !prev);
-            p5?.clear(); // Ensure canvas is cleared when toggling background
-          }}
+          onClick={() => setShowBackground(prev => !prev)}
           className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
         >
           {showBackground ? 'Hide Background' : 'Show Background'}
         </button>
         
         {processedImageData && (
-        <button
+          <button
             onClick={() => setUseProcessedImage(!useProcessedImage)}
             className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
-        >
+          >
             Show {useProcessedImage ? 'Original' : 'Processed'} Image
-        </button>
+          </button>
         )}
       </div>
     </div>
   );
-};
+});
 
 export default dynamic(() => Promise.resolve(P5Canvas), {
   ssr: false
