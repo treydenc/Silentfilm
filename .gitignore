@@ -1,0 +1,46 @@
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+/python_server/venv/
+/python_server/temp_audio/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+*.log
+/backend/venv/
+
+# Node.js specific
+/node_server/node_modules/
+/node_server/npm-debug.log
+/node_server/yarn-debug.log*
+/node_server/yarn-error.log*
+/node_server/public/dist/
+/node_server/.npm
+/node_server/.yarn
+/node_server/.pnp.*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
