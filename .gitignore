@@ -18,6 +18,7 @@ coverage.xml
 *.cover
 *.log
 /backend/venv/
+/backend/.venv/
 
 # Node.js specific
 /node_server/node_modules/

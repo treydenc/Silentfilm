@@ -220,6 +220,53 @@ export default function FrameEditorWrapper({ frameId }) {
     return null;
   }
 
+  // New function to handle image upload
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const imageData = e.target.result;
+        
+        try {
+          // Process the uploaded image for line drawing
+          const lineDrawingResponse = await fetch('http://localhost:5000/process-line-drawing', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              image: imageData,
+              detail_level: 'medium'
+            })
+          });
+
+          const lineDrawingResult = await lineDrawingResponse.json();
+          
+          if (!lineDrawingResponse.ok || !lineDrawingResult.success) {
+            throw new Error('Line drawing processing failed');
+          }
+
+          setFrameData(prev => ({
+            ...prev,
+            imageData,
+            lineDrawing: lineDrawingResult.images[0]
+          }));
+        } catch (error) {
+          console.error('Error processing uploaded image:', error);
+          // Still set the image even if line drawing processing fails
+          setFrameData(prev => ({
+            ...prev,
+            imageData,
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
+    } else {
+      alert('Please upload an image file');
+    }
+  };
+
   const scaledDimensions = getScaledDimensions();
 
   return (
@@ -268,7 +315,7 @@ export default function FrameEditorWrapper({ frameId }) {
                   <label className="text-sm text-gray-600">Size:</label>
                   <input
                     type="range"
-                    min="12"
+                    min="6"
                     max="72"
                     value={fontSize}
                     onChange={(e) => setFontSize(parseInt(e.target.value))}
@@ -353,6 +400,18 @@ export default function FrameEditorWrapper({ frameId }) {
         <div className="h-full p-6">
           <Card className="h-full p-6">
             <div className="space-y-6">
+            <div>
+                <label className="block text-sm font-medium mb-2 text-gray-700">
+                  Upload Background Image
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="w-full p-2 border rounded-lg bg-white"
+                />
+              </div>
+
               {/* Scene Description */}
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700">
@@ -370,7 +429,7 @@ export default function FrameEditorWrapper({ frameId }) {
               {/* Character Dialogue / Title Card */}
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700">
-                  Title Card / Drawing Text
+                  Drawing Text
                 </label>
                 <textarea
                   className="w-full p-3 border rounded-lg resize-none bg-white"
