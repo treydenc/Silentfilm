@@ -3,10 +3,20 @@
 import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import dynamic from 'next/dynamic';
 
+
 const Sketch = dynamic(
   () => import('react-p5').then((mod) => mod.default),
   { ssr: false }
 );
+
+// Available fonts configuration
+const AVAILABLE_FONTS = {
+  'Times New Roman': 'https://db.onlinewebfonts.com/t/32441506567156636049eb850b53f02a.ttf',
+  'Garamond': 'https://db.onlinewebfonts.com/t/2596224269750e00c3ad5356299a3b9f.ttf',
+  'Grillages': 'https://db.onlinewebfonts.com/t/00dd609da9143be366f7cf9bdab6e747.ttf',
+  'Caslon': 'https://db.onlinewebfonts.com/t/22bd8660c8d0b70ac3e9d024f7f2c31d.ttf',
+  'Future': 'https://db.onlinewebfonts.com/t/6901c65d6d291c5e2cbb9b44aaa905f7.ttf'
+};
 
 const P5Canvas = forwardRef(({ 
     imageData, 
@@ -22,6 +32,10 @@ const P5Canvas = forwardRef(({
     fontThickness = 2,
     drawingText = ''
   }, ref) => {
+  
+  // Add font state
+  const [currentFont, setCurrentFont] = useState('Garamond');
+  const customFont = useRef(null);
   
   // Core refs
   const p5InstanceRef = useRef(null);
@@ -62,6 +76,19 @@ const P5Canvas = forwardRef(({
     animationFrame: null
   });
 
+  const loadFont = async (p5) => {
+    try {
+      customFont.current = await p5.loadFont(AVAILABLE_FONTS[currentFont]);
+      if (customFont.current) {
+        p5.textFont(customFont.current);
+      }
+    } catch (error) {
+      console.error('Error loading font:', error);
+      // Fallback to default font
+      p5.textFont('Arial');
+    }
+  };
+
   // Setup effects
   useEffect(() => {
     setMounted(true);
@@ -76,6 +103,22 @@ const P5Canvas = forwardRef(({
   useEffect(() => {
     startTimeRef.current = externalStartTime;
   }, [externalStartTime]);
+
+  // Font loading effect
+  useEffect(() => {
+    async function updateFont() {
+      if (p5InstanceRef.current) {
+        await loadFont(p5InstanceRef.current);
+        // Force a redraw after font loads
+        if (letterData.current.length > 0) {
+          const p5 = p5InstanceRef.current;
+          p5.clear();
+          drawLetters(p5);
+        }
+      }
+    }
+    updateFont();
+  }, [currentFont]);
 
   useEffect(() => {
     if (!canDraw) {
@@ -172,7 +215,7 @@ const P5Canvas = forwardRef(({
             // Draw frame with black background
             const p5 = p5InstanceRef.current;
             p5.clear();
-            p5.background(0);
+            p5.background(255);
             
             // Calculate playback time for forward/reverse animation
             const playbackTime = cycleTime <= duration 
@@ -200,7 +243,6 @@ const P5Canvas = forwardRef(({
     }
   }));
 
-  // P5 setup
   const setup = (p5, canvasParentRef) => {
     p5InstanceRef.current = p5;
     
@@ -214,8 +256,8 @@ const P5Canvas = forwardRef(({
     canvas.elt.style.zIndex = '1';
     
     loadImages(p5);
+    loadFont(p5);
     p5.clear();
-    p5.textFont('Arial');
     p5.textAlign(p5.CENTER, p5.CENTER);
   };
 
@@ -247,8 +289,8 @@ const P5Canvas = forwardRef(({
       p5.rotate(data.angle);
       p5.textSize(data.fontSize);
       p5.strokeWeight(data.thickness);
-      p5.stroke(0);
-      p5.fill(255);
+      p5.stroke(255);
+      p5.fill(0);
       p5.text(data.letter, 0, 0);
       p5.pop();
     });
@@ -267,7 +309,7 @@ const P5Canvas = forwardRef(({
         p5.image(currentImage, 0, 0, parentDimensions.width, parentDimensions.height);
       }
     } else {
-      p5.background(0);
+      p5.background(255);
     }
 
     const duration = activeDrawingTime.current;
@@ -372,32 +414,15 @@ const P5Canvas = forwardRef(({
     onDrawingUpdate(timePoints.current, startTimeRef.current);
   };
 
+  const handleFontChange = (value) => {
+    setCurrentFont(value);
+  };
+
   if (!mounted) return null;
 
   return (
-    <div 
-      ref={containerRef} 
-      className="absolute inset-0"
-      style={{ 
-        width: parentDimensions.width,
-        height: parentDimensions.height,
-        position: 'relative',
-        overflow: 'hidden'
-      }}
-    >
-      <Sketch 
-        setup={setup} 
-        draw={draw} 
-        mouseDragged={mouseDragged}
-        mousePressed={mousePressed}
-        mouseReleased={mouseReleased}
-      />
-      
-      <div className="absolute top-24 left-4 bg-black/50 text-white p-2 font-mono text-sm">
-        <pre>{debug}</pre>
-      </div>
-      
-      <div className="absolute top-4 right-4 flex gap-2 z-10">
+    <div className="flex flex-col items-center w-full">
+      <div className="flex gap-4 mb-4 items-center justify-center">
         <button
           onClick={() => setShowBackground(prev => !prev)}
           className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
@@ -413,10 +438,51 @@ const P5Canvas = forwardRef(({
             Show {useProcessedImage ? 'Original' : 'Processed'} Image
           </button>
         )}
+
+        <select 
+        value={currentFont}
+        onChange={(e) => setCurrentFont(e.target.value)}
+        className="px-3 py-2 w-48 rounded-md border border-gray-300 bg-white text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+        <option value="" disabled>Select a font</option>
+        {Object.keys(AVAILABLE_FONTS).map((font) => (
+            <option 
+            key={font} 
+            value={font} 
+            style={{ fontFamily: font }}
+            >
+            {font}
+            </option>
+        ))}
+        </select>
+      </div>
+
+      <div 
+        ref={containerRef} 
+        className="relative"
+        style={{ 
+          width: parentDimensions.width,
+          height: parentDimensions.height,
+          overflow: 'hidden'
+        }}
+      >
+        <Sketch 
+          setup={setup} 
+          draw={draw} 
+          mouseDragged={mouseDragged}
+          mousePressed={mousePressed}
+          mouseReleased={mouseReleased}
+        />
+        
+        <div className="absolute top-24 left-4 bg-black/50 text-white p-2 font-mono text-sm">
+          <pre>{debug}</pre>
+        </div>
       </div>
     </div>
   );
 });
+
+P5Canvas.displayName = 'P5Canvas';
 
 export default dynamic(() => Promise.resolve(P5Canvas), {
   ssr: false
