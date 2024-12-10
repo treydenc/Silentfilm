@@ -9,72 +9,85 @@ const Sketch = dynamic(
   { ssr: false }
 );
 
-// Available fonts configuration
 const AVAILABLE_FONTS = {
-  'Times New Roman': 'https://db.onlinewebfonts.com/t/32441506567156636049eb850b53f02a.ttf',
-  'Garamond': 'https://db.onlinewebfonts.com/t/2596224269750e00c3ad5356299a3b9f.ttf',
-  'Grillages': 'https://db.onlinewebfonts.com/t/00dd609da9143be366f7cf9bdab6e747.ttf',
-  'Caslon': 'https://db.onlinewebfonts.com/t/22bd8660c8d0b70ac3e9d024f7f2c31d.ttf',
-  'Future': 'https://db.onlinewebfonts.com/t/6901c65d6d291c5e2cbb9b44aaa905f7.ttf'
-};
-
-const P5Canvas = forwardRef(({ 
-    imageData, 
-    processedImageData,
-    parentDimensions, 
-    isPlaying, 
-    canDraw,
-    timePoints: externalTimePoints = [],
-    startTime: externalStartTime,
-    onDrawingUpdate,
-    playbackSpeed = 1,
-    fontSize = 24,
-    fontThickness = 2,
-    drawingText = ''
-  }, ref) => {
+    'Times New Roman': 'https://db.onlinewebfonts.com/t/32441506567156636049eb850b53f02a.ttf',
+    'Garamond': 'https://db.onlinewebfonts.com/t/2596224269750e00c3ad5356299a3b9f.ttf',
+    'Grillages': 'https://db.onlinewebfonts.com/t/00dd609da9143be366f7cf9bdab6e747.ttf',
+    'Caslon': 'https://db.onlinewebfonts.com/t/22bd8660c8d0b70ac3e9d024f7f2c31d.ttf',
+    'Future': 'https://db.onlinewebfonts.com/t/6901c65d6d291c5e2cbb9b44aaa905f7.ttf'
+  };
   
-  // Add font state
-  const [currentFont, setCurrentFont] = useState('Garamond');
-  const customFont = useRef(null);
+  const P5Canvas = forwardRef(({ 
+      imageData, 
+      processedImageData,
+      parentDimensions, 
+      isPlaying, 
+      canDraw,
+      timePoints: externalTimePoints = [],
+      startTime: externalStartTime,
+      onDrawingUpdate,
+      playbackSpeed = 1,
+      fontSize = 24,
+      fontThickness = 2,
+      drawingText = ''
+    }, ref) => {
+    
+    // Previous state and refs remain the same
+    const [currentFont, setCurrentFont] = useState('Garamond');
+    const customFont = useRef(null);
+    const p5InstanceRef = useRef(null);
+    const canvasRef = useRef(null);
+    const containerRef = useRef(null);
+    const timePoints = useRef(externalTimePoints);
+    const startTimeRef = useRef(externalStartTime);
+    const backgroundImage = useRef(null);
+    const processedImage = useRef(null);
+    const [mounted, setMounted] = useState(false);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [showBackground, setShowBackground] = useState(true);
+    const [debug, setDebug] = useState('');
+    const [useProcessedImage, setUseProcessedImage] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
   
-  // Core refs
-  const p5InstanceRef = useRef(null);
-  const canvasRef = useRef(null);
-  const containerRef = useRef(null);
-  const timePoints = useRef(externalTimePoints);
-  const startTimeRef = useRef(externalStartTime);
+    // Previous refs remain the same
+    const spacingFactor = 2;
+    const letterSpacing = useRef(fontSize * spacingFactor);
+    const lastDrawnPoint = useRef({ x: 0, y: 0 });
+    const accumulatedDistance = useRef(0);
+    const currentLetterIndex = useRef(0);
+    const letterData = useRef([]);
+    const lastTimeRef = useRef(0);
+    const activeDrawingTime = useRef(0);
+    const currentSegmentRef = useRef([]);
+    const recordingRef = useRef({
+      chunks: [],
+      mediaRecorder: null,
+      stream: null,
+      isRecording: false,
+      animationFrame: null
+    });
   
-  // Image refs
-  const backgroundImage = useRef(null);
-  const processedImage = useRef(null);
+    // Add clearCanvas function
+    const clearCanvas = () => {
+      // Reset all drawing-related state
+      timePoints.current = [];
+      letterData.current = [];
+      currentLetterIndex.current = 0;
+      lastDrawnPoint.current = { x: 0, y: 0 };
+      accumulatedDistance.current = 0;
+      activeDrawingTime.current = 0;
+      currentSegmentRef.current = [];
+      startTimeRef.current = null;
+      lastTimeRef.current = 0;
   
-  // State
-  const [mounted, setMounted] = useState(false);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [showBackground, setShowBackground] = useState(true);
-  const [debug, setDebug] = useState('');
-  const [useProcessedImage, setUseProcessedImage] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-
-  // Drawing state refs
-  const spacingFactor = 2;
-  const letterSpacing = useRef(fontSize * spacingFactor);
-  const lastDrawnPoint = useRef({ x: 0, y: 0 });
-  const accumulatedDistance = useRef(0);
-  const currentLetterIndex = useRef(0);
-  const letterData = useRef([]);
-  const lastTimeRef = useRef(0);
-  const activeDrawingTime = useRef(0);
-  const currentSegmentRef = useRef([]);
-
-  // Recording state
-  const recordingRef = useRef({
-    chunks: [],
-    mediaRecorder: null,
-    stream: null,
-    isRecording: false,
-    animationFrame: null
-  });
+      // Clear the canvas
+      if (p5InstanceRef.current) {
+        p5InstanceRef.current.clear();
+      }
+  
+      // Notify parent component
+      onDrawingUpdate([], null);
+    };
 
   const loadFont = async (p5) => {
     try {
@@ -438,6 +451,13 @@ const P5Canvas = forwardRef(({
             Show {useProcessedImage ? 'Original' : 'Processed'} Image
           </button>
         )}
+
+        <button
+          onClick={clearCanvas}
+          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          Clear Canvas
+        </button>
 
         <select 
         value={currentFont}

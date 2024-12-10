@@ -161,7 +161,7 @@ export default function FrameEditorWrapper({ frameId }) {
       const formData = new FormData();
       formData.append('prompt', combinedPrompt);
       formData.append('output_format', 'png');
-      formData.append('model', 'sd3.5-large-turbo');
+      formData.append('model', 'sd3.5-large');
       formData.append('aspect_ratio', '9:16');
       
       const stabilityResponse = await fetch('https://api.stability.ai/v2beta/stable-image/generate/sd3', {
