@@ -29,10 +29,11 @@ const AVAILABLE_FONTS = {
       playbackSpeed = 1,
       fontSize = 24,
       fontThickness = 2,
+      fontColor = 0,
+      borderColor = 255,
       drawingText = ''
     }, ref) => {
     
-    // Previous state and refs remain the same
     const [currentFont, setCurrentFont] = useState('Garamond');
     const customFont = useRef(null);
     const p5InstanceRef = useRef(null);
@@ -48,9 +49,7 @@ const AVAILABLE_FONTS = {
     const [debug, setDebug] = useState('');
     const [useProcessedImage, setUseProcessedImage] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-  
-    // Previous refs remain the same
-    const spacingFactor = 2;
+    const spacingFactor = 1;
     const letterSpacing = useRef(fontSize * spacingFactor);
     const lastDrawnPoint = useRef({ x: 0, y: 0 });
     const accumulatedDistance = useRef(0);
@@ -225,7 +224,7 @@ const AVAILABLE_FONTS = {
             const currentTime = (Date.now() - startTime) / 1000;
             const cycleTime = (currentTime * playbackSpeed) % totalCycleDuration;
             
-            // Draw frame with black background
+            // Draw frame withblack background
             const p5 = p5InstanceRef.current;
             p5.clear();
             p5.background(255);
@@ -287,6 +286,8 @@ const AVAILABLE_FONTS = {
       angle,
       fontSize: fontSize,
       thickness: fontThickness,
+      color: fontColor,
+      border: borderColor,
       time: point.t
     });
 
@@ -302,8 +303,8 @@ const AVAILABLE_FONTS = {
       p5.rotate(data.angle);
       p5.textSize(data.fontSize);
       p5.strokeWeight(data.thickness);
-      p5.stroke(255);
-      p5.fill(0);
+      p5.stroke(data.border);
+      p5.fill(data.color);
       p5.text(data.letter, 0, 0);
       p5.pop();
     });

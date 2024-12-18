@@ -24,6 +24,8 @@ export default function FrameEditorWrapper({ frameId }) {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [fontSize, setFontSize] = useState(24);
   const [fontThickness, setFontThickness] = useState(2);
+  const [fontColor, setFontColor] = useState(0);
+  const [borderColor, setBorderColor] = useState(255);
   const p5CanvasRef = useRef(null);
   
   // Dimensions states
@@ -283,7 +285,7 @@ export default function FrameEditorWrapper({ frameId }) {
                   <input
                     type="range"
                     min="0.1"
-                    max="20"
+                    max="30"
                     step="0.1"
                     value={playbackSpeed}
                     onChange={handleSpeedChange}
@@ -335,6 +337,30 @@ export default function FrameEditorWrapper({ frameId }) {
                   />
                   <span className="text-sm text-gray-600">{fontThickness}</span>
                 </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Color:</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="255"
+                    value={fontColor}
+                    onChange={(e) => setFontColor(parseInt(e.target.value))}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-gray-600">{fontColor}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Border:</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="255"
+                    value={borderColor}
+                    onChange={(e) => setBorderColor(parseInt(e.target.value))}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-gray-600">{borderColor}</span>
+                </div>
               </div>
             )}
             
@@ -384,6 +410,8 @@ export default function FrameEditorWrapper({ frameId }) {
                     playbackSpeed={playbackSpeed}
                     fontSize={fontSize}
                     fontThickness={fontThickness}
+                    fontColor={fontColor}
+                    borderColor={borderColor}
                     drawingText={frameData.characterDialogue || ''}
                   />
                 </div>
