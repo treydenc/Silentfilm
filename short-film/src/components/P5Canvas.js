@@ -18,23 +18,26 @@ const AVAILABLE_FONTS = {
   };
   
   const P5Canvas = forwardRef(({ 
-      imageData, 
-      processedImageData,
-      parentDimensions, 
-      isPlaying, 
-      canDraw,
-      timePoints: externalTimePoints = [],
-      startTime: externalStartTime,
-      onDrawingUpdate,
-      playbackSpeed = 1,
-      fontSize = 24,
-      fontThickness = 2,
-      fontColor = 0,
-      borderColor = 255,
-      drawingText = ''
-    }, ref) => {
+    imageData, 
+    processedImageData,
+    parentDimensions, 
+    isPlaying, 
+    canDraw,
+    timePoints: externalTimePoints = [],
+    startTime: externalStartTime,
+    onDrawingUpdate,
+    playbackSpeed = 1,
+    fontSize = 24,
+    fontThickness = 2,
+    fontColor = 0,
+    borderColor = 255,
+    drawingText = '',
+    showBackground = true,
+    useProcessedImage = false,
+    currentFont = 'Garamond',
+    onClear,
+  }, ref) => {
     
-    const [currentFont, setCurrentFont] = useState('Garamond');
     const customFont = useRef(null);
     const p5InstanceRef = useRef(null);
     const canvasRef = useRef(null);
@@ -45,11 +48,9 @@ const AVAILABLE_FONTS = {
     const processedImage = useRef(null);
     const [mounted, setMounted] = useState(false);
     const [isDrawing, setIsDrawing] = useState(false);
-    const [showBackground, setShowBackground] = useState(true);
     const [debug, setDebug] = useState('');
-    const [useProcessedImage, setUseProcessedImage] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const spacingFactor = 1;
+    const spacingFactor = 1.2;
     const letterSpacing = useRef(fontSize * spacingFactor);
     const lastDrawnPoint = useRef({ x: 0, y: 0 });
     const accumulatedDistance = useRef(0);
@@ -66,27 +67,28 @@ const AVAILABLE_FONTS = {
       animationFrame: null
     });
   
-    // Add clearCanvas function
-    const clearCanvas = () => {
-      // Reset all drawing-related state
-      timePoints.current = [];
-      letterData.current = [];
-      currentLetterIndex.current = 0;
-      lastDrawnPoint.current = { x: 0, y: 0 };
-      accumulatedDistance.current = 0;
-      activeDrawingTime.current = 0;
-      currentSegmentRef.current = [];
-      startTimeRef.current = null;
-      lastTimeRef.current = 0;
-  
-      // Clear the canvas
-      if (p5InstanceRef.current) {
-        p5InstanceRef.current.clear();
-      }
-  
-      // Notify parent component
-      onDrawingUpdate([], null);
-    };
+  // const clearCanvas = () => {
+  //   // Reset all drawing-related state
+  //   timePoints.current = [];
+  //   letterData.current = [];
+  //   currentLetterIndex.current = 0;
+  //   lastDrawnPoint.current = { x: 0, y: 0 };
+  //   accumulatedDistance.current = 0;
+  //   activeDrawingTime.current = 0;
+  //   currentSegmentRef.current = [];
+  //   startTimeRef.current = null;
+  //   lastTimeRef.current = 0;
+
+  //   // Clear the canvas
+  //   if (p5InstanceRef.current) {
+  //     p5InstanceRef.current.clear();
+  //   }
+
+  //   // Notify parent component
+  //   if (onDrawingUpdate) {
+  //     onDrawingUpdate([], null);
+  //   }
+  // };
 
   const loadFont = async (p5) => {
     try {
@@ -162,98 +164,121 @@ const AVAILABLE_FONTS = {
     }
   };
 
-  // Export functionality
-  useImperativeHandle(ref, () => ({
-    exportAnimation: async () => {
-      if (!canvasRef.current || recordingRef.current.isRecording) return;
+// Export functionality
+useImperativeHandle(ref, () => ({
+  clearCanvas: () => {
+    // Reset all drawing-related state
+    timePoints.current = [];
+    letterData.current = [];
+    currentLetterIndex.current = 0;
+    lastDrawnPoint.current = { x: 0, y: 0 };
+    accumulatedDistance.current = 0;
+    activeDrawingTime.current = 0;
+    currentSegmentRef.current = [];
+    startTimeRef.current = null;
+    lastTimeRef.current = 0;
+
+    // Clear the canvas
+    if (p5InstanceRef.current) {
+      p5InstanceRef.current.clear();
+    }
+
+    // Notify parent component
+    if (onDrawingUpdate) {
+      onDrawingUpdate([], null);
+    }
+  },
+  
+  exportAnimation: async () => {
+    if (!canvasRef.current || recordingRef.current.isRecording) return;
+    
+    try {
+      // Get the actual canvas element
+      const canvas = canvasRef.current.elt;
       
-      try {
-        // Get the actual canvas element
-        const canvas = canvasRef.current.elt;
-        
-        // Set up recording
-        const stream = canvas.captureStream(60);
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType: 'video/webm',
-          videoBitsPerSecond: 8000000 // 8Mbps for high quality
-        });
-        
-        recordingRef.current = {
-          chunks: [],
-          mediaRecorder,
-          stream,
-          isRecording: true,
-          animationFrame: null
+      // Set up recording
+      const stream = canvas.captureStream(60);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm',
+        videoBitsPerSecond: 8000000 // 8Mbps for high quality
+      });
+      
+      recordingRef.current = {
+        chunks: [],
+        mediaRecorder,
+        stream,
+        isRecording: true,
+        animationFrame: null
+      };
+      
+      return new Promise((resolve) => {
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            recordingRef.current.chunks.push(e.data);
+          }
         };
-        
-        return new Promise((resolve) => {
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-              recordingRef.current.chunks.push(e.data);
-            }
-          };
 
-          mediaRecorder.onstop = () => {
-            const blob = new Blob(recordingRef.current.chunks, { type: 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'animation.webm';
-            a.click();
-            URL.revokeObjectURL(url);
-            
-            // Clean up
-            recordingRef.current.isRecording = false;
-            if (recordingRef.current.animationFrame) {
-              cancelAnimationFrame(recordingRef.current.animationFrame);
-            }
-            setIsRecording(false);
-            resolve();
-          };
-
-          setIsRecording(true);
-          mediaRecorder.start();
-
-          // Reset animation state
-          const duration = activeDrawingTime.current;
-          const totalCycleDuration = duration * 2;
-          const startTime = Date.now();
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordingRef.current.chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'animation.webm';
+          a.click();
+          URL.revokeObjectURL(url);
           
-          // Custom animation loop for recording
-          function animate() {
-            const currentTime = (Date.now() - startTime) / 1000;
-            const cycleTime = (currentTime * playbackSpeed) % totalCycleDuration;
-            
-            // Draw frame withblack background
-            const p5 = p5InstanceRef.current;
-            p5.clear();
-            p5.background(255);
-            
-            // Calculate playback time for forward/reverse animation
-            const playbackTime = cycleTime <= duration 
-              ? cycleTime 
-              : totalCycleDuration - cycleTime;
-            
-            drawLetters(p5, playbackTime);
+          // Clean up
+          recordingRef.current.isRecording = false;
+          if (recordingRef.current.animationFrame) {
+            cancelAnimationFrame(recordingRef.current.animationFrame);
+          }
+          setIsRecording(false);
+          resolve();
+        };
 
-            // Stop after one complete cycle
-            if (currentTime * playbackSpeed >= totalCycleDuration) {
-              mediaRecorder.stop();
-              return;
-            }
+        setIsRecording(true);
+        mediaRecorder.start();
 
-            recordingRef.current.animationFrame = requestAnimationFrame(animate);
+        // Reset animation state
+        const duration = activeDrawingTime.current;
+        const totalCycleDuration = duration * 2;
+        const startTime = Date.now();
+        
+        // Custom animation loop for recording
+        function animate() {
+          const currentTime = (Date.now() - startTime) / 1000;
+          const cycleTime = (currentTime * playbackSpeed) % totalCycleDuration;
+          
+          // Draw frame withblack background
+          const p5 = p5InstanceRef.current;
+          p5.clear();
+          p5.background(255);
+          
+          // Calculate playback time for forward/reverse animation
+          const playbackTime = cycleTime <= duration 
+            ? cycleTime 
+            : totalCycleDuration - cycleTime;
+          
+          drawLetters(p5, playbackTime);
+
+          // Stop after one complete cycle
+          if (currentTime * playbackSpeed >= totalCycleDuration) {
+            mediaRecorder.stop();
+            return;
           }
 
-          // Start animation
-          animate();
-        });
-      } catch (error) {
-        console.error('Export failed:', error);
-        setIsRecording(false);
-      }
+          recordingRef.current.animationFrame = requestAnimationFrame(animate);
+        }
+
+        // Start animation
+        animate();
+      });
+    } catch (error) {
+      console.error('Export failed:', error);
+      setIsRecording(false);
     }
-  }));
+  }
+}));
 
   const setup = (p5, canvasParentRef) => {
     p5InstanceRef.current = p5;
@@ -435,56 +460,13 @@ const AVAILABLE_FONTS = {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col items-center w-full">
-      <div className="flex gap-4 mb-4 items-center justify-center">
-        <button
-          onClick={() => setShowBackground(prev => !prev)}
-          className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
-        >
-          {showBackground ? 'Hide Background' : 'Show Background'}
-        </button>
-        
-        {processedImageData && (
-          <button
-            onClick={() => setUseProcessedImage(!useProcessedImage)}
-            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
-          >
-            Show {useProcessedImage ? 'Original' : 'Processed'} Image
-          </button>
-        )}
-
-        <button
-          onClick={clearCanvas}
-          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-        >
-          Clear Canvas
-        </button>
-
-        <select 
-        value={currentFont}
-        onChange={(e) => setCurrentFont(e.target.value)}
-        className="px-3 py-2 w-48 rounded-md border border-gray-300 bg-white text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        >
-        <option value="" disabled>Select a font</option>
-        {Object.keys(AVAILABLE_FONTS).map((font) => (
-            <option 
-            key={font} 
-            value={font} 
-            style={{ fontFamily: font }}
-            >
-            {font}
-            </option>
-        ))}
-        </select>
-      </div>
-
+    <div className="flex-1 flex items-center justify-center">
       <div 
         ref={containerRef} 
-        className="relative"
+        className="relative flex items-center justify-center bg-transparent rounded-lg"
         style={{ 
           width: parentDimensions.width,
-          height: parentDimensions.height,
-          overflow: 'hidden'
+          height: parentDimensions.height
         }}
       >
         <Sketch 
@@ -495,8 +477,13 @@ const AVAILABLE_FONTS = {
           mouseReleased={mouseReleased}
         />
         
-        <div className="absolute top-24 left-4 bg-black/50 text-white p-2 font-mono text-sm">
-          <pre>{debug}</pre>
+        {/* Keep only the keyboard shortcuts help */}
+        <div className="absolute top-4 right-4 bg-black/70 text-white p-2 text-sm rounded-lg opacity-50 hover:opacity-100 transition-opacity">
+          <div className="space-y-1">
+            <div>B: Toggle Background</div>
+            <div>P: Toggle Processed View</div>
+            <div>C: Clear Canvas</div>
+          </div>
         </div>
       </div>
     </div>

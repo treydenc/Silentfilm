@@ -7,8 +7,8 @@ export default function FrameEditor({ params }) {
   
   return (
     <div className="min-h-screen bg-gray-50">
-      <Timeline currentScene={frameId} />
-      <div className="pt-12">
+      {/* <Timeline currentScene={frameId} /> */}
+      <div className="">
         <FrameEditorWrapper frameId={frameId} />
       </div>
     </div>
